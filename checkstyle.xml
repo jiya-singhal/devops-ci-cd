@@ -1,0 +1,88 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+        "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+        "https://checkstyle.org/dtds/configuration_1_3.dtd">
+
+<!--
+    CHECKSTYLE CONFIGURATION
+    
+    This file defines the code style rules that will be enforced.
+    When the CI pipeline runs Checkstyle, it uses these rules to
+    check your code.
+    
+    WHY THIS MATTERS:
+    - Consistent code is easier to read and maintain
+    - Catches common mistakes (like unused imports)
+    - Part of the "quality gate" in CI/CD
+    
+    These rules are intentionally lenient for beginners.
+    Production projects often have stricter rules.
+-->
+<module name="Checker">
+    <!-- 
+        Checker-level rules (apply to whole files) 
+    -->
+    
+    <!-- Limit file length to 500 lines -->
+    <module name="FileLength">
+        <property name="max" value="500"/>
+    </module>
+    
+    <!-- Files must end with a newline -->
+    <module name="NewlineAtEndOfFile">
+        <property name="severity" value="warning"/>
+    </module>
+    
+    <!-- 
+        TreeWalker rules (analyze code structure)
+    -->
+    <module name="TreeWalker">
+        
+        <!-- ============ NAMING CONVENTIONS ============ -->
+        
+        <!-- Class names must start with uppercase (e.g., MyClass) -->
+        <module name="TypeName">
+            <property name="format" value="^[A-Z][a-zA-Z0-9]*$"/>
+        </module>
+        
+        <!-- Method names must start with lowercase (e.g., myMethod) -->
+        <module name="MethodName">
+            <property name="format" value="^[a-z][a-zA-Z0-9]*$"/>
+        </module>
+        
+        <!-- Constants should be UPPER_CASE -->
+        <module name="ConstantName"/>
+        
+        <!-- ============ IMPORTS ============ -->
+        
+        <!-- No unused imports -->
+        <module name="UnusedImports"/>
+        
+        <!-- No redundant imports -->
+        <module name="RedundantImport"/>
+        
+        <!-- No star imports (import com.example.*) -->
+        <module name="AvoidStarImport"/>
+        
+        <!-- ============ CODE QUALITY ============ -->
+        
+        <!-- Methods shouldn't be too long (max 50 lines) -->
+        <module name="MethodLength">
+            <property name="max" value="50"/>
+        </module>
+        
+        <!-- Avoid empty catch blocks -->
+        <module name="EmptyCatchBlock">
+            <property name="exceptionVariableName" value="expected|ignore"/>
+        </module>
+        
+        <!-- Require braces for if/else/for/while -->
+        <module name="NeedBraces"/>
+        
+        <!-- ============ WHITESPACE ============ -->
+        
+        <!-- Require whitespace after comma, semicolon -->
+        <module name="WhitespaceAfter"/>
+        
+    </module>
+</module>

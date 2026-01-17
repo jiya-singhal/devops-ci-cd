@@ -1,0 +1,42 @@
+# .dockerignore
+# 
+# This file tells Docker which files to IGNORE when building.
+# Like .gitignore, but for Docker.
+#
+# WHY IT MATTERS:
+# - Faster builds (less files to copy)
+# - Smaller images (no unnecessary files)
+# - Security (don't include secrets)
+
+# Git
+.git
+.gitignore
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# Build outputs (we build fresh in Docker)
+target/
+*.jar
+*.class
+
+# Logs
+*.log
+logs/
+
+# Documentation (not needed in container)
+*.md
+docs/
+
+# CI/CD files (not needed in container)
+.github/
+Jenkinsfile
+
+# Docker files (prevent recursive copy)
+Dockerfile
+docker-compose*.yml
+.dockerignore

@@ -1,0 +1,67 @@
+# =====================================================
+# GITIGNORE FILE
+# =====================================================
+# This tells Git which files to NOT track.
+# These are typically files that:
+# - Are generated during build (can be recreated)
+# - Contain secrets (NEVER commit secrets!)
+# - Are specific to your local machine (IDE settings)
+
+# ================== Build Outputs ==================
+target/
+build/
+*.jar
+*.war
+*.ear
+*.class
+
+# ================== IDE Files ==================
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# VS Code
+.vscode/
+
+# NetBeans
+nbproject/
+nbactions.xml
+nb-configuration.xml
+
+# ================== Maven ==================
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+
+# ================== Logs ==================
+*.log
+logs/
+
+# ================== OS Files ==================
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# ================== Secrets ==================
+# NEVER commit these!
+*.pem
+*.key
+.env
+.env.local
+secrets.yml
+credentials.json
+
+# ================== Dependency Check ==================
+dependency-check-report.html
+dependency-check-report.xml

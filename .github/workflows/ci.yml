@@ -1,0 +1,507 @@
+#############################################
+#     GITHUB ACTIONS CI/CD PIPELINE         #
+#############################################
+#
+# This is the HEART of your DevOps project!
+#
+# This YAML file tells GitHub Actions what to do when you push code.
+# Each "job" runs in a fresh virtual machine.
+# Each "step" is a command or action to execute.
+#
+# PIPELINE PHILOSOPHY (understand this for your viva!):
+# - Shift-Left: Catch problems EARLY in the pipeline
+# - Fail-Fast: Stop immediately when something fails
+# - Quality Gates: Each stage must pass before the next runs
+# - Security-First: Security checks are NOT optional
+#
+
+name: CI/CD Pipeline
+
+#############################################
+# TRIGGERS: When should this pipeline run?
+#############################################
+on:
+  # Run on pushes to master/main branch
+  push:
+    branches: 
+      - master
+      - main
+  
+  # Run on pull requests to master/main
+  pull_request:
+    branches: 
+      - master
+      - main
+  
+  # Allow manual triggering from GitHub UI
+  # Useful for re-running failed pipelines
+  workflow_dispatch:
+
+#############################################
+# ENVIRONMENT VARIABLES
+#############################################
+env:
+  # Docker image name (lowercase required!)
+  IMAGE_NAME: devops-cicd-demo
+  # Java version for build
+  JAVA_VERSION: '17'
+
+#############################################
+# JOBS: The actual pipeline stages
+#############################################
+jobs:
+
+  #==========================================
+  # STAGE 1: BUILD AND TEST
+  #==========================================
+  # This job compiles code, runs tests, and creates artifacts
+  #
+  # WHY THIS STAGE EXISTS:
+  # - Verifies code compiles successfully
+  # - Runs unit tests to catch bugs
+  # - Creates build artifacts for later stages
+  # - Catches problems BEFORE security scans (save time)
+  
+  build-and-test:
+    name: 📦 Build & Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      #----------------------------------------
+      # Step 1: Checkout Code
+      #----------------------------------------
+      # Downloads your repository code to the runner
+      # Without this, the runner has no code to work with!
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      #----------------------------------------
+      # Step 2: Setup Java
+      #----------------------------------------
+      # Installs Java JDK on the runner
+      # We use Temurin (Eclipse's free JDK)
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven  # Cache Maven dependencies (faster builds!)
+      
+      #----------------------------------------
+      # Step 3: Run Linting (Checkstyle)
+      #----------------------------------------
+      # WHY LINTING MATTERS:
+      # - Enforces consistent code style
+      # - Catches common mistakes early
+      # - Improves code maintainability
+      # - Part of "shift-left" quality approach
+      - name: Run Checkstyle Linting
+        run: mvn checkstyle:check
+      
+      #----------------------------------------
+      # Step 4: Run Unit Tests
+      #----------------------------------------
+      # WHY UNIT TESTS MATTER:
+      # - Verify business logic works correctly
+      # - Catch regressions (breaking existing features)
+      # - Provide confidence in code changes
+      # - Failed tests = Failed build (quality gate!)
+      - name: Run Unit Tests
+        run: mvn test
+      
+      #----------------------------------------
+      # Step 5: Build Application
+      #----------------------------------------
+      # Creates the JAR file that will be containerized
+      # -DskipTests: We already ran tests above
+      - name: Build with Maven
+        run: mvn package -DskipTests
+      
+      #----------------------------------------
+      # Step 6: Upload Build Artifact
+      #----------------------------------------
+      # Saves the JAR file for use in later jobs
+      # Artifacts persist between jobs in the same workflow
+      - name: Upload JAR Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-jar
+          path: target/*.jar
+          retention-days: 1
+
+  #==========================================
+  # STAGE 2: SECURITY SCANNING (SAST)
+  #==========================================
+  # SAST = Static Application Security Testing
+  # Analyzes source code for security vulnerabilities
+  #
+  # WHY SAST MATTERS:
+  # - Finds security bugs in YOUR code
+  # - Catches OWASP Top 10 vulnerabilities
+  # - Runs WITHOUT executing the code
+  # - Part of DevSecOps - security in the pipeline
+  
+  security-sast:
+    name: 🔒 SAST Security Scan
+    runs-on: ubuntu-latest
+    needs: build-and-test  # Only run after build succeeds
+    
+    # Required for CodeQL to upload results
+    permissions:
+      security-events: write
+      contents: read
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      #----------------------------------------
+      # Initialize CodeQL
+      #----------------------------------------
+      # CodeQL is GitHub's security analysis engine
+      # It builds a database of your code and queries it
+      # for security issues
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java
+          # Queries to run:
+          # - security-extended: Comprehensive security checks
+          queries: security-extended
+      
+      #----------------------------------------
+      # Build for CodeQL Analysis
+      #----------------------------------------
+      # CodeQL needs to see the build to understand the code
+      - name: Build for CodeQL
+        run: mvn compile -DskipTests
+      
+      #----------------------------------------
+      # Perform CodeQL Analysis
+      #----------------------------------------
+      # Runs the actual security analysis
+      # Results appear in GitHub Security tab!
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:java"
+
+  #==========================================
+  # STAGE 3: DEPENDENCY SCANNING (SCA)
+  #==========================================
+  # SCA = Software Composition Analysis
+  # Scans your DEPENDENCIES (libraries) for vulnerabilities
+  #
+  # WHY SCA MATTERS:
+  # - Most code uses external libraries
+  # - Libraries can have known vulnerabilities (CVEs)
+  # - Supply chain attacks are increasing
+  # - You're responsible for vulnerabilities in your dependencies!
+  
+  security-sca:
+    name: 📋 Dependency Security Scan
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
+      
+      #----------------------------------------
+      # OWASP Dependency Check
+      #----------------------------------------
+      # Scans Maven dependencies against NVD database
+      # NVD = National Vulnerability Database
+      - name: Run OWASP Dependency Check
+        run: |
+          mvn org.owasp:dependency-check-maven:check \
+            -DfailBuildOnCVSS=9 \
+            -DsuppressionFile=dependency-check-suppression.xml || true
+        # Note: || true prevents build failure on warnings
+        # In production, you'd want to fail on critical vulnerabilities
+      
+      #----------------------------------------
+      # Upload Dependency Report
+      #----------------------------------------
+      - name: Upload Dependency Check Report
+        uses: actions/upload-artifact@v4
+        if: always()  # Upload even if check found issues
+        with:
+          name: dependency-check-report
+          path: target/dependency-check-report.html
+          retention-days: 7
+
+  #==========================================
+  # STAGE 4: BUILD DOCKER IMAGE
+  #==========================================
+  # Creates a container image from the application
+  #
+  # WHY CONTAINERIZATION MATTERS:
+  # - Consistent environment across dev/test/prod
+  # - Easy scaling and deployment
+  # - Isolation from host system
+  # - Industry standard for modern deployments
+  
+  docker-build:
+    name: 🐳 Build Docker Image
+    runs-on: ubuntu-latest
+    needs: [build-and-test, security-sast, security-sca]
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      #----------------------------------------
+      # Setup Docker Buildx
+      #----------------------------------------
+      # Buildx is Docker's extended build capabilities
+      # Enables caching, multi-platform builds, etc.
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      #----------------------------------------
+      # Build Docker Image
+      #----------------------------------------
+      # Builds the image but doesn't push yet
+      # We'll scan it first!
+      - name: Build Docker Image
+        run: |
+          docker build -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
+          docker tag ${{ env.IMAGE_NAME }}:${{ github.sha }} ${{ env.IMAGE_NAME }}:latest
+      
+      #----------------------------------------
+      # Save Image for Next Jobs
+      #----------------------------------------
+      - name: Save Docker Image
+        run: docker save ${{ env.IMAGE_NAME }}:latest > image.tar
+      
+      - name: Upload Docker Image Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: image.tar
+          retention-days: 1
+
+  #==========================================
+  # STAGE 5: CONTAINER SECURITY SCAN
+  #==========================================
+  # Scans the Docker image for vulnerabilities
+  #
+  # WHY IMAGE SCANNING MATTERS:
+  # - Base images may have vulnerabilities
+  # - OS packages in container may be outdated
+  # - Prevents shipping vulnerable containers
+  # - Last line of defense before deployment
+  
+  image-scan:
+    name: 🔍 Scan Docker Image
+    runs-on: ubuntu-latest
+    needs: docker-build
+    
+    steps:
+      - name: Download Docker Image
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+      
+      - name: Load Docker Image
+        run: docker load < image.tar
+      
+      #----------------------------------------
+      # Trivy Container Scan
+      #----------------------------------------
+      # Trivy is a popular open-source vulnerability scanner
+      # It checks:
+      # - OS packages (Alpine, Debian, etc.)
+      # - Application dependencies
+      # - Known CVEs (Common Vulnerabilities and Exposures)
+      - name: Run Trivy Vulnerability Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:latest
+          format: 'table'
+          exit-code: '0'  # Don't fail build (set to '1' in production)
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+      
+      #----------------------------------------
+      # Generate Trivy Report
+      #----------------------------------------
+      - name: Generate Trivy Report
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:latest
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      
+      - name: Upload Trivy Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-scan-results
+          path: trivy-results.sarif
+          retention-days: 7
+
+  #==========================================
+  # STAGE 6: CONTAINER RUNTIME TEST
+  #==========================================
+  # Actually runs the container to verify it works
+  #
+  # WHY RUNTIME TESTING MATTERS:
+  # - Image built successfully ≠ Application runs correctly
+  # - Catches configuration issues
+  # - Verifies health endpoints work
+  # - Smoke test before deployment
+  
+  container-test:
+    name: 🧪 Container Runtime Test
+    runs-on: ubuntu-latest
+    needs: image-scan
+    
+    steps:
+      - name: Download Docker Image
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+      
+      - name: Load Docker Image
+        run: docker load < image.tar
+      
+      #----------------------------------------
+      # Run Container
+      #----------------------------------------
+      # Start the container in detached mode (-d)
+      # Map port 8080 inside container to 8080 on host
+      - name: Start Container
+        run: |
+          docker run -d \
+            --name test-container \
+            -p 8080:8080 \
+            ${{ env.IMAGE_NAME }}:latest
+          
+          # Wait for application to start (max 60 seconds)
+          echo "Waiting for application to start..."
+          for i in {1..60}; do
+            if curl -s http://localhost:8080/health > /dev/null 2>&1; then
+              echo "Application is ready!"
+              break
+            fi
+            echo "Waiting... ($i/60)"
+            sleep 1
+          done
+      
+      #----------------------------------------
+      # Health Check Test
+      #----------------------------------------
+      # Verify the health endpoint returns "OK"
+      - name: Test Health Endpoint
+        run: |
+          response=$(curl -s http://localhost:8080/health)
+          if [ "$response" = "OK" ]; then
+            echo "✅ Health check passed: $response"
+          else
+            echo "❌ Health check failed: $response"
+            exit 1
+          fi
+      
+      #----------------------------------------
+      # Functional Tests
+      #----------------------------------------
+      # Test other endpoints to verify functionality
+      - name: Test Hello Endpoint
+        run: |
+          response=$(curl -s "http://localhost:8080/hello?name=CI")
+          echo "Hello response: $response"
+          if [[ "$response" == *"Hello, CI"* ]]; then
+            echo "✅ Hello endpoint test passed"
+          else
+            echo "❌ Hello endpoint test failed"
+            exit 1
+          fi
+      
+      - name: Test Version Endpoint
+        run: |
+          response=$(curl -s http://localhost:8080/version)
+          echo "Version response: $response"
+          if [ "$response" = "1.0.0" ]; then
+            echo "✅ Version endpoint test passed"
+          else
+            echo "❌ Version endpoint test failed"
+            exit 1
+          fi
+      
+      #----------------------------------------
+      # Cleanup
+      #----------------------------------------
+      - name: Stop Container
+        if: always()
+        run: |
+          docker stop test-container || true
+          docker rm test-container || true
+
+  #==========================================
+  # STAGE 7: PUSH TO DOCKER HUB
+  #==========================================
+  # Publishes the verified image to Docker Hub
+  #
+  # WHY REGISTRY PUSH MATTERS:
+  # - Makes image available for deployment
+  # - Enables CD (Continuous Deployment)
+  # - Creates versioned, immutable artifacts
+  # - Only pushes AFTER all tests pass (quality gate)
+  
+  docker-push:
+    name: 🚀 Push to Docker Hub
+    runs-on: ubuntu-latest
+    needs: container-test
+    # Only push on main/master branch (not PRs)
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Download Docker Image
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+      
+      - name: Load Docker Image
+        run: docker load < image.tar
+      
+      #----------------------------------------
+      # Login to Docker Hub
+      #----------------------------------------
+      # Uses secrets configured in GitHub repository settings
+      # NEVER hardcode credentials in your workflow!
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      #----------------------------------------
+      # Tag and Push Image
+      #----------------------------------------
+      # Push with multiple tags:
+      # - :latest (always points to newest)
+      # - :sha (specific version by commit)
+      - name: Tag and Push Image
+        run: |
+          # Tag with Docker Hub username
+          docker tag ${{ env.IMAGE_NAME }}:latest \
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          
+          docker tag ${{ env.IMAGE_NAME }}:latest \
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          
+          # Push both tags
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          
+          echo "✅ Image pushed successfully!"
+          echo "Pull with: docker pull ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"

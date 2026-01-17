@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    POM.XML - Project Object Model
+    
+    This is Maven's configuration file. Maven is a BUILD TOOL that:
+    1. Downloads dependencies (libraries your code needs)
+    2. Compiles your code
+    3. Runs tests
+    4. Packages your application (creates a JAR file)
+    
+    WHY THIS MATTERS FOR CI/CD:
+    - The CI pipeline uses Maven to build and test the application
+    - Dependencies listed here will be scanned for vulnerabilities (SCA)
+    - Plugins enable code quality checks and security scans
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" 
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    
+    <modelVersion>4.0.0</modelVersion>
+    
+    <!-- Parent: Spring Boot Starter Parent provides default configurations -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.2.0</version>
+        <relativePath/>
+    </parent>
+    
+    <!-- Project Coordinates: Unique identifier for your project -->
+    <groupId>com.example</groupId>
+    <artifactId>devops-cicd-demo</artifactId>
+    <version>1.0.0</version>
+    <name>DevOps CI/CD Demo</name>
+    <description>A demonstration project for DevOps CI/CD pipeline</description>
+    
+    <!-- Properties: Variables used throughout this file -->
+    <properties>
+        <java.version>17</java.version>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+    
+    <!-- 
+        DEPENDENCIES: External libraries your code needs
+        
+        These will be downloaded automatically by Maven.
+        IMPORTANT: These dependencies are scanned for vulnerabilities 
+        by the SCA (Software Composition Analysis) tool in our CI pipeline.
+    -->
+    <dependencies>
+        <!-- Spring Boot Web: Enables building web applications -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        
+        <!-- Spring Boot Actuator: Provides health checks and monitoring -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        
+        <!-- Spring Boot Test: Testing framework -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    
+    <!-- 
+        BUILD PLUGINS: Tools that run during the build process
+        
+        These plugins are essential for CI/CD:
+        - spring-boot-maven-plugin: Creates runnable JAR
+        - checkstyle: Enforces code style (LINTING)
+        - spotbugs: Static code analysis (SAST)
+    -->
+    <build>
+        <plugins>
+            <!-- Spring Boot Maven Plugin: Packages the app as executable JAR -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            
+            <!-- 
+                Maven Checkstyle Plugin: CODE LINTING
+                
+                WHY LINTING MATTERS:
+                - Enforces consistent code style across the team
+                - Catches common mistakes early
+                - Improves code readability and maintainability
+                - Part of "shift-left" - catching issues early
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <version>3.3.1</version>
+                <configuration>
+                    <configLocation>checkstyle.xml</configLocation>
+                    <consoleOutput>true</consoleOutput>
+                    <failsOnError>true</failsOnError>
+                </configuration>
+            </plugin>
+            
+            <!-- Surefire Plugin: Runs unit tests -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.2</version>
+            </plugin>
+            
+            <!-- JaCoCo: Code Coverage Reports -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.11</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
