@@ -4,7 +4,7 @@
 
 A production-grade CI/CD pipeline demonstration using GitHub Actions, showcasing DevSecOps principles and best practices.
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Overview](#overview)
 - [Architecture](#architecture)
@@ -16,7 +16,7 @@ A production-grade CI/CD pipeline demonstration using GitHub Actions, showcasing
 - [Security Features](#security-features)
 - [Troubleshooting](#troubleshooting)
 
-## 🎯 Overview
+## Overview
 
 This project demonstrates a complete CI/CD pipeline that includes:
 
@@ -30,7 +30,7 @@ This project demonstrates a complete CI/CD pipeline that includes:
 - ✅ Runtime validation
 - ✅ Automated deployment to Docker Hub
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -65,7 +65,7 @@ This project demonstrates a complete CI/CD pipeline that includes:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## 🔄 Pipeline Stages
+## Pipeline Stages
 
 | Stage | Tool | Purpose | Why It Matters |
 |-------|------|---------|----------------|
@@ -81,7 +81,7 @@ This project demonstrates a complete CI/CD pipeline that includes:
 | **Runtime Test** | curl | Smoke testing | Verifies container runs correctly |
 | **Push** | docker/login-action | Publish to registry | Enables deployment |
 
-## 📦 Prerequisites
+## Prerequisites
 
 ### Local Development
 - Java 17 or higher
@@ -93,7 +93,7 @@ This project demonstrates a complete CI/CD pipeline that includes:
 - GitHub account
 - Docker Hub account
 
-## 💻 Local Setup
+## Local Setup
 
 ### 1. Clone the Repository
 
@@ -149,7 +149,7 @@ docker run -p 8080:8080 devops-cicd-demo
 curl http://localhost:8080/health
 ```
 
-## ⚙️ GitHub Setup
+## GitHub Setup
 
 ### 1. Create GitHub Repository
 
@@ -196,7 +196,7 @@ git commit -m "Initial commit: DevOps CI/CD demo project"
 git push -u origin master
 ```
 
-## 🚀 Running the Pipeline
+## Running the Pipeline
 
 ### Automatic Triggers
 The pipeline runs automatically on:
@@ -215,7 +215,7 @@ The pipeline runs automatically on:
 3. Click on individual jobs to see logs
 4. Check Security tab for CodeQL results
 
-## 🔒 Security Features
+## Security Features
 
 ### SAST (Static Application Security Testing)
 - **Tool:** GitHub CodeQL
@@ -235,7 +235,7 @@ The pipeline runs automatically on:
 - **Checks:** OS packages, application libraries
 - **Severity:** Reports CRITICAL and HIGH
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Pipeline Fails at Build Stage
 ```bash
@@ -283,7 +283,7 @@ docker build -t test .
 - Check Java version compatibility
 - Review CodeQL logs for specific errors
 
-## 📚 Project Structure
+## Project Structure
 
 ```
 devops-cicd-demo/
@@ -313,7 +313,7 @@ devops-cicd-demo/
 └── README.md                  # This file
 ```
 
-## 🎓 Learning Resources
+## Learning Resources
 
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)
 - [Docker Documentation](https://docs.docker.com/)
@@ -321,7 +321,7 @@ devops-cicd-demo/
 - [OWASP Top 10](https://owasp.org/www-project-top-ten/)
 - [DevSecOps Best Practices](https://www.devsecops.org/)
 
-## 📝 License
+## License
 
 This project is for educational purposes as part of the DevOps CI/CD assessment.
 
@@ -329,4 +329,3 @@ This project is for educational purposes as part of the DevOps CI/CD assessment.
 
 **Author:** Jiya Singhal  
 **Student ID:** 10043  
-**Date:** January 2026
