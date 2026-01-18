@@ -11,20 +11,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * Hello Controller Integration Tests
- * 
- * These are INTEGRATION TESTS - they test how different parts of the 
- * application work together, specifically testing our HTTP endpoints.
- * 
- * WHY INTEGRATION TESTS MATTER:
- * 1. They verify the full request/response cycle works
- * 2. They catch issues that unit tests might miss
- * 3. They simulate real user interactions
- * 
- * @SpringBootTest starts the full application context
- * @AutoConfigureMockMvc provides a MockMvc instance for testing HTTP requests
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 class HelloControllerTest {
@@ -35,8 +21,6 @@ class HelloControllerTest {
     @Test
     @DisplayName("Health endpoint returns OK")
     void healthEndpointReturnsOk() throws Exception {
-        // This test is CRITICAL for CI/CD!
-        // It verifies our application starts and responds correctly
         mockMvc.perform(get("/health"))
                .andExpect(status().isOk())
                .andExpect(content().string("OK"));
