@@ -1,71 +1,214 @@
 # DevOps CI/CD Demo Project
 
-A CI/CD pipeline project using GitHub Actions.
+A complete CI/CD pipeline with Kubernetes deployment using GitHub Actions.
+
+---
 
 ## What This Project Does
 
-- Builds a Java Spring Boot app
-- Runs tests
+This project demonstrates a production-style CI/CD pipeline that:
+
+- Builds a Java Spring Boot application
+- Runs unit tests automatically
 - Checks code style with Checkstyle
-- Scans for security issues (CodeQL, OWASP Dependency Check)
-- Builds a Docker image
-- Scans the image with Trivy
-- Pushes to Docker Hub
+- Scans for security vulnerabilities (SAST with CodeQL)
+- Scans dependencies for known CVEs (SCA with OWASP)
+- Builds and scans Docker images (Trivy)
+- Pushes verified images to Docker Hub
+- Deploys to a Kubernetes cluster
+
+---
 
 ## Requirements
 
 - Java 17
 - Maven
 - Docker
-- GitHub and Docker Hub accounts
+- GitHub account
+- Docker Hub account
+
+---
 
 ## Running Locally
 
 ```bash
-# Clone
+# Clone the repo
 git clone https://github.com/jiya-singhal/devops-ci-cd.git
 cd devops-ci-cd
 
-# Build
+# Build and test
 mvn clean verify
 
-# Run
+# Run the application
 mvn spring-boot:run
 
-# Test endpoints
-curl http://localhost:8080/health
-curl http://localhost:8080/hello
-```
-
-## Docker
-
-```bash
-docker build -t devops-cicd-demo .
-docker run -p 8080:8080 devops-cicd-demo
-```
-
-## GitHub Setup
-
-Add these secrets in your repo settings (Settings > Secrets and variables > Actions):
-
-- `DOCKERHUB_USERNAME` - your Docker Hub username
-- `DOCKERHUB_TOKEN` - access token from Docker Hub (Account Settings > Security > New Access Token)
-
-## Pipeline
-
-The pipeline runs on push to main/master. You can also trigger it manually from the Actions tab.
-
-## Project Structure
-
-```
-├── .github/workflows/ci.yml    # pipeline config
-├── src/main/java/              # application code
-├── src/test/java/              # tests
-├── Dockerfile
-├── pom.xml
-└── checkstyle.xml
+# Test the endpoints
+curl http://localhost:8080/health    # Returns: OK
+curl http://localhost:8080/hello     # Returns: Hello, World!
+curl http://localhost:8080/version   # Returns: 1.0.0
 ```
 
 ---
 
-Jiya Singhal - 10043
+## Running with Docker
+
+```bash
+# Build the image
+docker build -t devops-ci-cd .
+
+# Run the container
+docker run -p 8080:8080 devops-ci-cd
+
+# Test
+curl http://localhost:8080/health
+```
+
+---
+
+## GitHub Secrets Configuration
+
+Go to your repo → Settings → Secrets and variables → Actions → New repository secret
+
+Add these two secrets:
+
+| Secret Name | Value | How to Get It |
+|-------------|-------|---------------|
+| `DOCKERHUB_USERNAME` | Your Docker Hub username | Your login username |
+| `DOCKERHUB_TOKEN` | Docker Hub access token | Docker Hub → Account Settings → Security → New Access Token |
+
+**Important:** Never hardcode these values in your code!
+
+---
+
+## CI/CD Pipeline Explanation
+
+The pipeline is defined in `.github/workflows/ci.yml` and runs automatically on every push to main/master.
+
+### Pipeline Stages:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         CI STAGES                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. BUILD & TEST                                                │
+│     └─ Checkout → Setup Java → Lint → Test → Build JAR         │
+│                                                                 │
+│  2. SECURITY SCANS (run in parallel)                           │
+│     ├─ SAST: CodeQL scans source code                          │
+│     └─ SCA: OWASP checks dependencies for CVEs                 │
+│                                                                 │
+│  3. DOCKER                                                      │
+│     └─ Build Image → Trivy Scan → Test Container → Push        │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                         CD STAGES                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  4. KUBERNETES DEPLOYMENT                                       │
+│     └─ Start Minikube → Deploy App → Create Service → Verify   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### What Each Stage Does:
+
+| Stage | Tool | Purpose |
+|-------|------|---------|
+| Checkout | actions/checkout | Downloads code from GitHub |
+| Setup Java | actions/setup-java | Installs Java 17 |
+| Linting | Checkstyle | Enforces code style rules |
+| Unit Tests | JUnit 5 | Verifies code works correctly |
+| Build | Maven | Creates JAR file |
+| SAST | CodeQL | Finds security bugs in code |
+| SCA | OWASP Dependency Check | Finds vulnerable libraries |
+| Docker Build | Docker | Creates container image |
+| Image Scan | Trivy | Finds vulnerabilities in container |
+| Container Test | curl | Verifies container runs properly |
+| Push | Docker Hub | Publishes verified image |
+| K8s Deploy | Minikube + kubectl | Deploys to Kubernetes cluster |
+
+### Why This Order?
+
+- Fast checks run first (fail-fast principle)
+- Security scans run before Docker push
+- Only verified images get deployed
+
+---
+
+## Kubernetes Deployment
+
+The CD stage deploys the application to a Kubernetes cluster using Minikube.
+
+### K8s Files:
+
+- `k8s/deployment.yaml` - Defines how to run the app (2 replicas)
+- `k8s/service.yaml` - Exposes the app on a NodePort
+
+### What Happens:
+
+1. Minikube starts a local K8s cluster
+2. kubectl applies the deployment (creates 2 pods)
+3. kubectl applies the service (exposes on port 30080)
+4. Pipeline verifies the deployment is healthy
+
+### Running K8s Locally (optional):
+
+```bash
+# Start minikube
+minikube start
+
+# Deploy
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
+
+# Check status
+kubectl get pods
+kubectl get services
+
+# Access the app
+minikube service devops-demo-service --url
+```
+
+---
+
+## Project Structure
+
+```
+devops-ci-cd/
+├── .github/
+│   └── workflows/
+│       └── ci.yml              # CI/CD pipeline
+├── k8s/
+│   ├── deployment.yaml         # Kubernetes deployment
+│   └── service.yaml            # Kubernetes service
+├── src/
+│   ├── main/java/              # Application code
+│   └── test/java/              # Unit tests
+├── Dockerfile                  # Container build instructions
+├── pom.xml                     # Maven config and dependencies
+├── checkstyle.xml              # Code style rules
+└── README.md
+```
+
+---
+
+## Triggering the Pipeline
+
+**Automatic:** Push to main or master branch
+
+**Manual:** Go to Actions tab → Select workflow → Run workflow
+
+---
+
+## Viewing Results
+
+- **Pipeline logs:** GitHub repo → Actions tab
+- **Security findings:** GitHub repo → Security tab
+- **Docker image:** Docker Hub → Your repositories
+
+---
+
+Jiya Singhal
+
+Roll No: 10043 
