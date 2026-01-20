@@ -1,0 +1,210 @@
+name: CD Pipeline
+
+on:
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    types:
+      - completed
+    branches:
+      - main
+      - master
+  
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: devops-ci-cd
+  AWS_REGION: us-east-1
+
+jobs:
+
+  deploy:
+    name: Deploy to AWS EC2
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+          terraform_wrapper: false
+
+      - name: Generate SSH Key
+        run: |
+          ssh-keygen -t rsa -b 4096 -f ~/.ssh/deployer -N ""
+          echo "SSH key generated"
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+      
+      - name: Terraform Plan
+        working-directory: ./terraform
+        run: |
+          terraform plan \
+            -var="ssh_public_key=$(cat ~/.ssh/deployer.pub)" \
+            -var="dockerhub_username=${{ secrets.DOCKERHUB_USERNAME }}" \
+            -var="image_name=${{ env.IMAGE_NAME }}" \
+            -out=tfplan
+      
+      - name: Terraform Apply
+        working-directory: ./terraform
+        run: terraform apply -auto-approve tfplan
+
+      - name: Get EC2 Public IP
+        id: ec2
+        working-directory: ./terraform
+        run: |
+          EC2_IP=$(terraform output -raw instance_public_ip)
+          echo "EC2_IP=$EC2_IP" >> $GITHUB_OUTPUT
+          echo "EC2 Public IP: $EC2_IP"
+
+      - name: Wait for EC2 Instance
+        run: |
+          echo "Waiting for EC2 instance to be ready..."
+          sleep 60
+          
+          # Wait for SSH to be available
+          for i in {1..30}; do
+            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -i ~/.ssh/deployer ubuntu@${{ steps.ec2.outputs.EC2_IP }} "echo 'SSH Ready'" 2>/dev/null; then
+              echo " SSH connection established"
+              break
+            fi
+            echo "Waiting for SSH... attempt $i/30"
+            sleep 10
+          done
+
+      - name: Install k3s on EC2
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deployer ubuntu@${{ steps.ec2.outputs.EC2_IP }} << 'EOF'
+            # Update system
+            sudo apt-get update -y
+            
+            # Install k3s (lightweight Kubernetes)
+            curl -sfL https://get.k3s.io | sh -
+            
+            # Wait for k3s to be ready
+            sleep 30
+            
+            # Fix permissions
+            sudo chmod 644 /etc/rancher/k3s/k3s.yaml
+            sudo chown ubuntu:ubuntu /etc/rancher/k3s/k3s.yaml
+            
+            # Set KUBECONFIG
+            echo 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml' >> ~/.bashrc
+            
+            # Verify k3s is running
+            sudo k3s kubectl get nodes
+            echo " k3s installed successfully"
+          EOF
+
+      - name: Deploy Application
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deployer ubuntu@${{ steps.ec2.outputs.EC2_IP }} << EOF
+            export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+            
+            # Create deployment
+            sudo k3s kubectl create deployment devops-app \
+              --image=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest \
+              --replicas=2 \
+              --dry-run=client -o yaml | sudo k3s kubectl apply -f -
+            
+            # Expose as NodePort service
+            sudo k3s kubectl expose deployment devops-app \
+              --type=NodePort \
+              --port=8080 \
+              --target-port=8080 \
+              --name=devops-service \
+              --dry-run=client -o yaml | sudo k3s kubectl apply -f -
+            
+            # Wait for deployment
+            echo "Waiting for deployment to be ready..."
+            sudo k3s kubectl rollout status deployment/devops-app --timeout=120s
+            
+            # Get service info
+            echo ""
+            echo "=== Deployment Status ==="
+            sudo k3s kubectl get pods
+            sudo k3s kubectl get services
+          EOF
+
+      - name: Get Application URL
+        id: app_url
+        run: |
+          NODE_PORT=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/deployer ubuntu@${{ steps.ec2.outputs.EC2_IP }} \
+            "sudo k3s kubectl get service devops-service -o jsonpath='{.spec.ports[0].nodePort}'")
+          
+          APP_URL="http://${{ steps.ec2.outputs.EC2_IP }}:${NODE_PORT}"
+          echo "APP_URL=$APP_URL" >> $GITHUB_OUTPUT
+          echo "Application URL: $APP_URL"
+
+      - name: Verify Deployment
+        run: |
+          echo "Testing deployed application..."
+          sleep 10
+          
+          # Test health endpoint
+          HEALTH=$(curl -s "${{ steps.app_url.outputs.APP_URL }}/health" || echo "FAILED")
+          echo "Health check response: $HEALTH"
+          
+          # Test hello endpoint
+          HELLO=$(curl -s "${{ steps.app_url.outputs.APP_URL }}/hello?name=Kubernetes" || echo "FAILED")
+          echo "Hello endpoint response: $HELLO"
+          
+          if [ "$HEALTH" = "OK" ]; then
+            echo " Deployment verification PASSED!"
+          else
+            echo " Health check returned: $HEALTH"
+          fi
+
+      - name: Deployment Summary
+        run: |
+          echo "## 🚀 CD Pipeline Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment Details" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| EC2 IP | \`${{ steps.ec2.outputs.EC2_IP }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Application URL | ${{ steps.app_url.outputs.APP_URL }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | \`${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Replicas | 2 |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "###  Access Your Application" >> $GITHUB_STEP_SUMMARY
+          echo "- Health Check: ${{ steps.app_url.outputs.APP_URL }}/health" >> $GITHUB_STEP_SUMMARY
+          echo "- Hello API: ${{ steps.app_url.outputs.APP_URL }}/hello?name=YourName" >> $GITHUB_STEP_SUMMARY
+
+  cleanup:
+    name: Cleanup AWS Resources
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.cleanup == 'true'
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+      
+      - name: Terraform Destroy
+        working-directory: ./terraform
+        run: |
+          terraform init
+          terraform destroy -auto-approve
+          echo " AWS resources cleaned up"
