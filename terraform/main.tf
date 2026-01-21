@@ -1,6 +1,5 @@
+# AWS Provider
 terraform {
-  required_version = ">= 1.0.0"
-  
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -13,6 +12,7 @@ provider "aws" {
   region = var.aws_region
 }
 
+# Variables
 variable "aws_region" {
   description = "AWS region"
   type        = string
@@ -22,7 +22,7 @@ variable "aws_region" {
 variable "instance_type" {
   description = "EC2 instance type"
   type        = string
-  default     = "t3.micro" 
+  default     = "t3.small"  # Free tier - 2GB RAM - good for k3s!
 }
 
 variable "ssh_public_key" {
@@ -43,7 +43,7 @@ variable "image_name" {
 # Get latest Ubuntu 22.04 AMI
 data "aws_ami" "ubuntu" {
   most_recent = true
-  owners      = ["099720109477"]  # Canonical
+  owners      = ["099720109477"]
 
   filter {
     name   = "name"
@@ -56,70 +56,46 @@ data "aws_ami" "ubuntu" {
   }
 }
 
-# Get default VPC
-data "aws_vpc" "default" {
-  default = true
-}
+# Security Group for K8s
+resource "aws_security_group" "k8s_sg" {
+  name        = "devops-k8s-sg"
+  description = "Security group for DevOps K8s demo"
 
-# Get default subnets
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-}
-
-resource "aws_security_group" "devops_sg" {
-  name        = "devops-app-sg"
-  description = "Security group for DevOps CI/CD demo application"
-  vpc_id      = data.aws_vpc.default.id
-
-  # SSH access
   ingress {
-    description = "SSH"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # HTTP access
   ingress {
-    description = "HTTP"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Application port (8080)
   ingress {
-    description = "Application"
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Kubernetes NodePort range
   ingress {
-    description = "Kubernetes NodePort"
-    from_port   = 30000
-    to_port     = 32767
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # k3s API server
-  ingress {
-    description = "k3s API"
     from_port   = 6443
     to_port     = 6443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Allow all outbound traffic
+  ingress {
+    from_port   = 30000
+    to_port     = 32767
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -128,95 +104,149 @@ resource "aws_security_group" "devops_sg" {
   }
 
   tags = {
-    Name    = "devops-app-sg"
-    Project = "DevOps-CI-CD"
+    Name = "devops-k8s-sg"
   }
 }
 
+# Key Pair
 resource "aws_key_pair" "deployer" {
-  key_name   = "devops-deployer-key"
+  key_name   = "devops-k8s-key"
   public_key = var.ssh_public_key
 
   tags = {
-    Name    = "devops-deployer-key"
-    Project = "DevOps-CI-CD"
+    Name = "devops-k8s-key"
   }
 }
 
-resource "aws_instance" "devops_server" {
-  ami                         = data.aws_ami.ubuntu.id
-  instance_type               = var.instance_type
-  key_name                    = aws_key_pair.deployer.key_name
-  vpc_security_group_ids      = [aws_security_group.devops_sg.id]
-  subnet_id                   = tolist(data.aws_subnets.default.ids)[0]
-  associate_public_ip_address = true
+# EC2 Instance with k3s
+resource "aws_instance" "k8s_server" {
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = var.instance_type
+
+  key_name               = aws_key_pair.deployer.key_name
+  vpc_security_group_ids = [aws_security_group.k8s_sg.id]
 
   root_block_device {
     volume_size = 20
-    volume_type = "gp3"
+    volume_type = "gp2"
   }
 
   user_data = <<-EOF
               #!/bin/bash
+              set -e
+              exec > >(tee /var/log/user-data.log) 2>&1
+              echo "Starting setup at $(date)"
+              
               # Update system
-              apt-get update -y
-              apt-get upgrade -y
+              apt-get update
+              apt-get install -y curl
               
-              # Install Docker
-              apt-get install -y docker.io
-              systemctl start docker
-              systemctl enable docker
-              usermod -aG docker ubuntu
+              # Install k3s with reduced footprint for 2GB RAM
+              echo "Installing k3s..."
+              curl -sfL https://get.k3s.io | sh -s - \
+                --write-kubeconfig-mode 644 \
+                --disable traefik \
+                --disable metrics-server
               
-              # Install useful tools
-              apt-get install -y curl wget git
+              # Wait for k3s to be ready
+              echo "Waiting for k3s..."
+              sleep 60
               
-              echo "EC2 instance initialized successfully!"
+              # Wait for node ready
+              for i in {1..30}; do
+                if kubectl get nodes 2>/dev/null | grep -q "Ready"; then
+                  echo "Node is ready!"
+                  break
+                fi
+                echo "Waiting for node... attempt $i"
+                sleep 10
+              done
+              
+              # Create deployment with 2 replicas
+              echo "Creating deployment..."
+              cat <<DEPLOY | kubectl apply -f -
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: devops-app
+              spec:
+                replicas: 2
+                selector:
+                  matchLabels:
+                    app: devops-app
+                template:
+                  metadata:
+                    labels:
+                      app: devops-app
+                  spec:
+                    containers:
+                      - name: devops-app
+                        image: ${var.dockerhub_username}/${var.image_name}:latest
+                        ports:
+                          - containerPort: 8080
+                        resources:
+                          requests:
+                            memory: "256Mi"
+                            cpu: "100m"
+                          limits:
+                            memory: "512Mi"
+                            cpu: "300m"
+                        livenessProbe:
+                          httpGet:
+                            path: /health
+                            port: 8080
+                          initialDelaySeconds: 30
+                          periodSeconds: 10
+                        readinessProbe:
+                          httpGet:
+                            path: /health
+                            port: 8080
+                          initialDelaySeconds: 5
+                          periodSeconds: 5
+              DEPLOY
+              
+              # Wait for deployment
+              echo "Waiting for deployment..."
+              kubectl rollout status deployment/devops-app --timeout=180s || true
+              
+              # Create NodePort service
+              echo "Creating service..."
+              kubectl expose deployment devops-app \
+                --type=NodePort \
+                --port=8080 \
+                --target-port=8080 \
+                --name=devops-service || true
+              
+              # Save status
+              echo "=== Setup Complete ===" > /home/ubuntu/deployment-status.txt
+              date >> /home/ubuntu/deployment-status.txt
+              echo "" >> /home/ubuntu/deployment-status.txt
+              echo "=== Nodes ===" >> /home/ubuntu/deployment-status.txt
+              kubectl get nodes >> /home/ubuntu/deployment-status.txt 2>&1
+              echo "" >> /home/ubuntu/deployment-status.txt
+              echo "=== Pods ===" >> /home/ubuntu/deployment-status.txt
+              kubectl get pods >> /home/ubuntu/deployment-status.txt 2>&1
+              echo "" >> /home/ubuntu/deployment-status.txt
+              echo "=== Services ===" >> /home/ubuntu/deployment-status.txt
+              kubectl get svc >> /home/ubuntu/deployment-status.txt 2>&1
+              
+              echo "Setup complete at $(date)"
               EOF
 
   tags = {
-    Name        = "devops-k3s-server"
-    Project     = "DevOps-CI-CD"
-    Environment = "Production"
+    Name = "devops-k8s-server"
   }
 }
 
-resource "aws_eip" "devops_eip" {
-  instance = aws_instance.devops_server.id
-  domain   = "vpc"
-
-  tags = {
-    Name    = "devops-app-eip"
-    Project = "DevOps-CI-CD"
-  }
-}
-
+# Outputs
 output "instance_id" {
-  description = "EC2 instance ID"
-  value       = aws_instance.devops_server.id
+  value = aws_instance.k8s_server.id
 }
 
 output "instance_public_ip" {
-  description = "Public IP of EC2 instance"
-  value       = aws_eip.devops_eip.public_ip
-}
-
-output "instance_public_dns" {
-  description = "Public DNS of EC2 instance"
-  value       = aws_instance.devops_server.public_dns
-}
-
-output "security_group_id" {
-  description = "Security group ID"
-  value       = aws_security_group.devops_sg.id
+  value = aws_instance.k8s_server.public_ip
 }
 
 output "ssh_command" {
-  description = "SSH command to connect"
-  value       = "ssh -i ~/.ssh/deployer ubuntu@${aws_eip.devops_eip.public_ip}"
-}
-
-output "app_url" {
-  description = "Application URL (after deployment)"
-  value       = "http://${aws_eip.devops_eip.public_ip}:30080"
+  value = "ssh -i ~/.ssh/deployer ubuntu@${aws_instance.k8s_server.public_ip}"
 }
