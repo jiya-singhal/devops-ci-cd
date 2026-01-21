@@ -116,7 +116,7 @@ jobs:
             # Create deployment
             sudo k3s kubectl create deployment devops-app \
               --image=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest \
-              --replicas=2 \
+              --replicas=1 \
               --dry-run=client -o yaml | sudo k3s kubectl apply -f -
             
             # Expose as NodePort service
