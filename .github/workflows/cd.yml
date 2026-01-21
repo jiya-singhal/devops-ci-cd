@@ -74,55 +74,46 @@ jobs:
           echo "Waiting for EC2 instance to be fully ready..."
           sleep 90
           
-          # Wait for SSH to be available
           for i in {1..30}; do
             if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/deployer ubuntu@${{ steps.ec2.outputs.EC2_IP }} "echo 'SSH Ready'" 2>/dev/null; then
-              echo " SSH connection established"
+              echo "SSH connection established"
               break
             fi
             echo "Waiting for SSH... attempt $i/30"
             sleep 10
           done
           
-          # Wait for cloud-init to complete (apt-get to finish)
           echo "Waiting for system initialization to complete..."
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deployer ubuntu@${{ steps.ec2.outputs.EC2_IP }} \
-            "cloud-init status --wait || true"
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deployer ubuntu@${{ steps.ec2.outputs.EC2_IP }} "cloud-init status --wait || true"
 
       - name: Install k3s on EC2
         run: |
-          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i ~/.ssh/deployer ubuntu@${{ steps.ec2.outputs.EC2_IP }} << 'ENDSSH'
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i ~/.ssh/deployer ubuntu@${{ steps.ec2.outputs.EC2_IP }} 'bash -s' << 'ENDSSH'
             set -e
             
-            # Wait for any apt locks to be released
             echo "Waiting for apt locks..."
             while sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
               echo "Waiting for apt lock..."
               sleep 5
             done
             
-            # Update system
             sudo apt-get update -y
             
-            # Install k3s (lightweight Kubernetes)
             echo "Installing k3s..."
             curl -sfL https://get.k3s.io | sh -
             
-            # Wait for k3s to be ready
             echo "Waiting for k3s to start..."
             sleep 45
             
-            # Fix permissions
             sudo chmod 644 /etc/rancher/k3s/k3s.yaml
             
-            # Verify k3s is running
             sudo k3s kubectl get nodes
-            echo " k3s installed successfully"
-ENDSSH
+            echo "k3s installed successfully"
+          ENDSSH
 
       - name: Deploy Application
         run: |
-          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -i ~/.ssh/deployer ubuntu@${{ steps.ec2.outputs.EC2_IP }} << ENDSSH
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -i ~/.ssh/deployer ubuntu@${{ steps.ec2.outputs.EC2_IP }} 'bash -s' << ENDSSH
             export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
             echo "Creating deployment..."
@@ -142,18 +133,15 @@ ENDSSH
             echo "Waiting for deployment to be ready..."
             sudo k3s kubectl rollout status deployment/devops-app --timeout=180s
             
-            echo ""
             echo "=== Deployment Status ==="
             sudo k3s kubectl get pods
             sudo k3s kubectl get services
-ENDSSH
+          ENDSSH
 
       - name: Get Application URL
         id: app_url
         run: |
-          NODE_PORT=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/deployer ubuntu@${{ steps.ec2.outputs.EC2_IP }} \
-            "sudo k3s kubectl get service devops-service -o jsonpath='{.spec.ports[0].nodePort}'")
-          
+          NODE_PORT=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/deployer ubuntu@${{ steps.ec2.outputs.EC2_IP }} "sudo k3s kubectl get service devops-service -o jsonpath='{.spec.ports[0].nodePort}'")
           APP_URL="http://${{ steps.ec2.outputs.EC2_IP }}:${NODE_PORT}"
           echo "APP_URL=$APP_URL" >> $GITHUB_OUTPUT
           echo "Application URL: $APP_URL"
@@ -170,23 +158,23 @@ ENDSSH
           echo "Hello endpoint response: $HELLO"
           
           if [ "$HEALTH" = "OK" ]; then
-            echo " Deployment verification PASSED!"
+            echo "Deployment verification PASSED!"
           else
-            echo " Health check returned: $HEALTH (app may still be starting)"
+            echo "Health check returned: $HEALTH"
           fi
 
       - name: Deployment Summary
         run: |
-          echo "##  CD Pipeline Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "## CD Pipeline Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Deployment Details" >> $GITHUB_STEP_SUMMARY
           echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| EC2 IP | \`${{ steps.ec2.outputs.EC2_IP }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| EC2 IP | ${{ steps.ec2.outputs.EC2_IP }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Application URL | ${{ steps.app_url.outputs.APP_URL }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Image | \`${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest |" >> $GITHUB_STEP_SUMMARY
           echo "| Replicas | 1 |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "###  Access Your Application" >> $GITHUB_STEP_SUMMARY
+          echo "### Access Your Application" >> $GITHUB_STEP_SUMMARY
           echo "- Health Check: ${{ steps.app_url.outputs.APP_URL }}/health" >> $GITHUB_STEP_SUMMARY
           echo "- Hello API: ${{ steps.app_url.outputs.APP_URL }}/hello?name=YourName" >> $GITHUB_STEP_SUMMARY
