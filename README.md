@@ -18,6 +18,17 @@ This project demonstrates a production-style CI/CD pipeline that:
 - Deploys to a Kubernetes cluster
 
 ---
+Step 1 - Code Push: When I push code to GitHub, CI pipeline triggers automatically.
+Step 2 - Build & Test: It sets up Java 17, runs Checkstyle to check code formatting, runs 12 unit tests using JUnit, and builds a JAR file using Maven.
+Step 3 - Security Scanning: Three types of security scans run:
+* SAST using CodeQL - scans my source code for vulnerabilities like SQL injection
+* SCA using OWASP Dependency Check - scans my dependencies for known CVEs
+* Container scanning using Trivy - scans the Docker image
+Step 4 - Docker: It builds a Docker image using multi-stage build to keep size small (~180MB), tests the container by hitting /health endpoint, then pushes to Docker Hub.
+Step 5 - CD Pipeline: After CI passes, CD pipeline starts. It uses Terraform to create AWS infrastructure - an EC2 t3.small instance with Security Group.
+Step 6 - Kubernetes: The EC2 runs a user_data script that installs k3s (lightweight Kubernetes), pulls my Docker image, creates a Deployment with 2 replicas, and exposes it using NodePort service.
+Step 7 - Result: My app becomes live at http://EC2-IP:30821. Anyone on the internet can access it.
+This is DevSecOps because security is integrated at every stage, not just at the end.
 
 ## Requirements
 
@@ -110,6 +121,39 @@ The pipeline is defined in `.github/workflows/ci.yml` and runs automatically on 
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+Code Push
+    ↓
+┌─────────────────────────────────────┐
+│           CI PIPELINE               │
+├─────────────────────────────────────┤
+│ Checkout → Java Setup → Checkstyle  │
+│     ↓                               │
+│ Unit Tests (12 tests)               │
+│     ↓                               │
+│ Build JAR (Maven)                   │
+│     ↓                               │
+│ ┌─────────┐  ┌─────────┐           │
+│ │  SAST   │  │   SCA   │ (parallel)│
+│ │ CodeQL  │  │  OWASP  │           │
+│ └─────────┘  └─────────┘           │
+│     ↓                               │
+│ Docker Build → Trivy Scan → Push   │
+└─────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────┐
+│           CD PIPELINE               │
+├─────────────────────────────────────┤
+│ Terraform → Create EC2 + SG        │
+│     ↓                               │
+│ Install k3s (Kubernetes)           │
+│     ↓                               │
+│ Deploy App (2 replicas)            │
+│     ↓                               │
+│ Expose via NodePort (30821)        │
+└─────────────────────────────────────┘
+    ↓
+App Live at http://EC2-IP:30821
 
 ### What Each Stage Does:
 
